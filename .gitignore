@@ -46,6 +46,7 @@ venv.bak/
 
 # Project settings folder
 .idea/
+.idea
 
 # PyCharm module files
 *.iml
