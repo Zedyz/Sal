@@ -1,0 +1,84 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+*.whl
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+venv.bak/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# VSCode settings (optional)
+.vscode/
+
+# ------------------------
+# PyCharm-specific ignores
+# ------------------------
+
+# Project settings folder
+.idea/
+
+# PyCharm module files
+*.iml
+
+# Gradle (if applicable for Python + Gradle projects)
+.gradle/
+build/
+
+# SQLite database files (if using local DB for dev)
+*.sqlite3
+
+# File-based project settings (backup files, etc.)
+*.iws
+*.ipr
+
+# PyCharm's coverage directory
+coverage/
+
+# ------------------------
+# OS-specific files
+# ------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
