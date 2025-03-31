@@ -5,8 +5,10 @@ import torch.nn.functional as F
 import torchvision.io as tvio
 from torch.utils.data import Dataset
 
-
 class SaliencyDataset(Dataset):
+    """
+    Loads (image, fdm, eyemap). Optionally mild data augmentation if is_train=True.
+    """
     def __init__(self,
                  orig_dir,
                  fdm_dir,
@@ -31,9 +33,11 @@ class SaliencyDataset(Dataset):
         base, ext = os.path.splitext(fname)
         ext = ext.lower()
 
+        # (1) Original image
         img_path = os.path.join(self.orig_dir, fname)
         image = tvio.read_image(img_path).float() / 255.0
 
+        # (2) FDM
         fdm_path = os.path.join(self.fdm_dir, base + ext)
         if not os.path.exists(fdm_path):
             alt_ext = '.png' if ext != '.png' else '.jpg'
@@ -43,6 +47,7 @@ class SaliencyDataset(Dataset):
             fdm = fdm[:1]  # keep just one channel
         fdm = fdm.float() / 255.0
 
+        # (3) EyeMap
         eye_path = os.path.join(self.eyemap_dir, base + ext)
         if not os.path.exists(eye_path):
             alt_ext = '.png' if ext != '.png' else '.jpg'
@@ -52,6 +57,7 @@ class SaliencyDataset(Dataset):
             eye = eye[:1]
         eye = (eye > 127).float()
 
+        # Augment if training and if i want with bluh = True
         bluh = False
         if self.is_train and bluh == True:
             scale_factor = random.uniform(*self.scale_range)
@@ -65,6 +71,7 @@ class SaliencyDataset(Dataset):
             eye = F.interpolate(eye.unsqueeze(0), size=(new_h, new_w),
                                 mode='bilinear', align_corners=False)[0]
 
+            # random brightness
             bright_factor = random.uniform(*self.brightness_range)
             image = torch.clamp(image * bright_factor, 0.0, 1.0)
 

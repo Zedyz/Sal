@@ -1,7 +1,7 @@
 import numpy as np
-import torch
 import torch.nn.functional as F
-
+import torch
+from tqdm import tqdm
 
 def auc_judd(pred_map, fix_map):
     pm = pred_map.view(-1).cpu().numpy()
@@ -55,7 +55,7 @@ def shuffled_auc(pred_2d, fix_2d, neg_fixations):
 
 
 def safe_pred_map(pred):
-    # remove NaNs or Inf
+    # remove NaNs or Inf, w/o all is messed up
     pred = torch.nan_to_num(pred, nan=0.0, posinf=1e5, neginf=0.0)
     return torch.clamp(pred, min=0.0)
 
@@ -170,12 +170,15 @@ def combined_loss(pred_map, fdm_map, fix_map, alpha=1.0, beta=0.0, gamma_rank=0.
     return total, float(Lkl.item()), float(raw_nss), float(cost_cc), float(cst_rank), float(cst_tv)
 
 
-def single_pass_evaluate(model, loader, all_train_fix, alpha=1.0, beta=0.0,
-                         gamma=0.0, tv_weight=0.0, device=None):
+def single_pass_evaluate(model, loader, all_train_fix,
+                         alpha=1.0, beta=0.0,
+                         gamma=0.0, tv_weight=0.0,
+                         device=None):
     """
-    Evaluate model on a dataloader. Returns dict of metrics: loss, nss, cc, kl, aucj, sauc
+    Evaluate model on a dataloader with dynamic alpha, beta, gamma, tv_weight.
+    Returns a dict: { 'loss','nss','cc','kl','aucj','sauc' }
     """
-    import torch
+
     model.eval()
     sum_loss = 0.0
     sum_nss = 0.0
@@ -186,7 +189,7 @@ def single_pass_evaluate(model, loader, all_train_fix, alpha=1.0, beta=0.0,
     count = 0
 
     with torch.no_grad():
-        for images, fdms, eyemaps, mask, names in loader:
+        for images, fdms, eyemaps, mask, names in tqdm(loader, desc="[Eval]", leave=False):
             images = images.to(device)
             fdms = fdms.to(device)
             eyemaps = eyemaps.to(device)
@@ -227,11 +230,11 @@ def single_pass_evaluate(model, loader, all_train_fix, alpha=1.0, beta=0.0,
                     sum_cc += float(num / den)
 
                 # KL
-                kl_single = kl_div_loss(
+                kl_one = kl_div_loss(
                     pm2d.unsqueeze(0).unsqueeze(0),
                     fm2d.unsqueeze(0).unsqueeze(0)
                 )
-                sum_kl += float(kl_single.item())
+                sum_kl += float(kl_one.item())
 
                 # AUC-J
                 aj_ = auc_judd(pm2d, ey2d)
@@ -241,8 +244,8 @@ def single_pass_evaluate(model, loader, all_train_fix, alpha=1.0, beta=0.0,
                 this_fname = names[i]
                 pos_coords = (ey2d > 0.5).nonzero(as_tuple=False)
                 Kpos = pos_coords.size(0)
-                neg_cands = all_train_fix[all_train_fix[:, 0] != this_fname]
                 import numpy as np
+                neg_cands = all_train_fix[all_train_fix[:, 0] != this_fname]
                 if Kpos < 1 or len(neg_cands) < Kpos:
                     sauc_val = 0.5
                 else:

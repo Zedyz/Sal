@@ -321,28 +321,6 @@ class SwinBackbone(nn.Module):
         return f1, f2, f3, f4
 
 
-def freeze_stage_params_full(m, stage_idx=3):
-    """
-    For HybridSwinViT, freeze certain blocks of the Swin Tiny backbone.
-    stage_idx in [0..3], or -1 => unfreeze all.
-    """
-    for p in m.backbone.swin.parameters():
-        p.requires_grad = True
-    # stage map => which indices in self.swin.features to freeze
-    stage_map = {
-        0: [0, 1],
-        1: [0, 1, 2, 3],
-        2: [0, 1, 2, 3, 4, 5],
-        3: [0, 1, 2, 3, 4, 5, 6, 7],
-    }
-    if stage_idx < 0:
-        return
-    freeze_list = stage_map.get(stage_idx, [])
-    for i in freeze_list:
-        for p in m.backbone.swin.features[i].parameters():
-            p.requires_grad = False
-
-
 class HybridSwinViT(nn.Module):
     """
     Combines multiple scales from a Swin Tiny backbone, merges them into
@@ -440,7 +418,6 @@ class HybridSwinViT(nn.Module):
 
 def build_saliency_model(model_name: str):
     """
-    Factory function to create whichever model you want, by name:
       "dino"       -> DinoV2Saliency
       "convnext"   -> ConvNeXtViT
       "purevit"    -> PureVisionTransformer
