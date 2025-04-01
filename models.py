@@ -29,7 +29,7 @@ class DinoV2Saliency(nn.Module):
 
         out = self.backbone(pixel_values=x_input)
         feats = out.last_hidden_state  # [B, N, hidden_dim]
-        patch_tokens = feats[:, 1:, :]  # skip CLS
+        patch_tokens = feats[:, 1:, :]
 
         # reshape patch tokens into a 2D feature map
         Hf = H // 14

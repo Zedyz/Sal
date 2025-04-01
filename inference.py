@@ -3,31 +3,38 @@ import json
 import argparse
 import torch
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from IPython.display import display
-import torchvision.io as tvio
 from torch.utils.data import DataLoader
 from torchvision.io import ImageReadMode
+import torchvision.io as tvio
+
 from dataset import SaliencyDataset, collate_fn
 from losses_and_metrics import safe_pred_map
 from models import build_saliency_model
 
+# Example checkpoints & training logs (update paths as needed)
 model_checkpoints = {
-    "dino": "best_checkpoint_dino.pth",
-    "convnext": "best_checkpoint_convnext.pth",
-    "purevit": "best_checkpoint_purevit.pth",
-    "swin": "best_checkpoint_swin.pth",
+    "dino": "checkpoints/best_checkpoint_dino.pth",
+    "convnext": "checkpoints/best_checkpoint_convnext.pth",
+    "purevit": "checkpoints/best_checkpoint_purevit.pth",
+    "swin": "checkpoints/best_checkpoint_swin.pth",
+}
+
+training_logs = {
+    "dino": "training_runs/training_log_dino.csv",
+    "convnext": "training_runs/training_log_convnext.csv",
+    "purevit": "training_runs/training_log_purevit.csv",
+    "swin": "training_runs/training_log_swin.csv",
 }
 
 
 def load_model(model_name, ckpt_path, device="cuda"):
     model = build_saliency_model(model_name).to(device)
-
     if not os.path.isfile(ckpt_path):
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
     ckpt = torch.load(ckpt_path, map_location=device)
-
     if isinstance(ckpt, dict) and "model_state" in ckpt:
         loaded_dict = ckpt["model_state"]
     else:
@@ -47,18 +54,44 @@ def load_model(model_name, ckpt_path, device="cuda"):
     return model
 
 
+def find_best_epoch_nss_cc(csv_path):
+    """
+    Returns (best_epoch, best_nss, best_cc) for the maximum (val_nss + val_cc).
+    """
+    df = pd.read_csv(csv_path)
+    if ("val_nss" not in df.columns) or ("val_cc" not in df.columns):
+        return None, None, None
+
+    combined = df["val_nss"] + df["val_cc"]
+    best_idx = combined.idxmax()
+    best_epoch = df.loc[best_idx, "epoch"]
+    best_nss = df.loc[best_idx, "val_nss"]
+    best_cc = df.loc[best_idx, "val_cc"]
+    return best_epoch, best_nss, best_cc
+
+
 def test_multiple_images_with_gt(
-        device="cuda",
-        test_json="dataset/scanpaths_test.json",
-        orig_dir="dataset/orig_websaliency_all",
-        fdm_dir="dataset/fdm_websaliency",
-        eyemap_dir="dataset/eyemaps_websaliency",
-        num_images=5
+    device="cuda",
+    test_json="dataset/scanpaths_test.json",
+    orig_dir="dataset/orig_websaliency_all",
+    fdm_dir="dataset/fdm_websaliency",
+    eyemap_dir="dataset/eyemaps_websaliency",
+    num_images=5
 ):
+    """
+    Creates a single figure with 2*nimages rows and 4 columns.
+    For each image i:
+        - Row (2*i)   => single wide subplot spanning all 4 columns for ground-truth
+        - Row (2*i+1) => 4 subplots, each for a model prediction (dino, convnext, purevit, swin)
+    Titles show best epoch + individual NSS/CC from training logs.
+    """
+
+    # 1) Gather test filenames
     with open(test_json, 'r') as f:
         test_data = json.load(f)
     test_names = sorted({d["name"] for d in test_data if "name" in d})
 
+    # 2) Create dataset & loader
     test_ds = SaliencyDataset(
         orig_dir=orig_dir,
         fdm_dir=fdm_dir,
@@ -71,84 +104,103 @@ def test_multiple_images_with_gt(
         collate_fn=lambda b: collate_fn(b, patch_size=14)
     )
 
+    # 3) Load up to num_images
     images_list = []
     for idx, batch in enumerate(test_loader):
         if idx >= num_images:
             break
         images_list.append(batch)
+    nimages = len(images_list)
+    print(f"Loaded {nimages} test images into memory.")
 
-    print(f"Loaded {len(images_list)} test images into memory.")
-    print("Will display figures for: 4 models × the chosen images.")
+    # 4) Load models
+    model_names = ["dino", "convnext", "purevit", "swin"]
+    loaded_models = {}
+    for mname in model_names:
+        loaded_models[mname] = load_model(mname, model_checkpoints[mname], device)
 
-    for model_name, ckpt_path in model_checkpoints.items():
-        model = load_model(model_name, ckpt_path, device)
+    # 5) Parse logs to get best epoch + (NSS, CC)
+    best_info = {}
+    for mname in model_names:
+        csv_path = training_logs.get(mname, None)
+        if csv_path and os.path.isfile(csv_path):
+            ep, nss, cc = find_best_epoch_nss_cc(csv_path)
+            best_info[mname] = (ep, nss, cc)
+        else:
+            best_info[mname] = (None, None, None)
 
-        print(f"Running model '{model_name}' on {len(images_list)} images")
+    # 6) Create a figure with 2*nimages rows, 4 columns
+    # Make the figure fairly large
+    fig = plt.figure(figsize=(30, 10 * nimages))
 
-        for (imgs, fdms, eyemaps, mask, names) in images_list:
-            image_name = names[0]
+    # We define height_ratios so the GT row is slightly smaller (2.2) than the predictions row (3).
+    from matplotlib.gridspec import GridSpec
+    height_ratios = []
+    for _ in range(nimages):
+        height_ratios.extend([2.2, 3])  # GT is 2.2 units tall, models row is 3 units
 
-            imgs = imgs.to(device)
-            fdms = fdms.to(device)
+    # Create the GridSpec with some vertical space
+    gs = GridSpec(
+        nrows=2*nimages, ncols=4,
+        height_ratios=height_ratios,
+        figure=fig,
+        wspace=0,   # no horizontal gap
+        hspace=0.2  # add some vertical gap
+    )
 
+    title_fontsize = 20
+
+    # 7) Fill figure
+    for i, (imgs, fdms, eyemaps, mask, names) in enumerate(images_list):
+        image_name = names[0]
+        imgs = imgs.to(device)
+        fdms = fdms.to(device)
+
+        # Convert original image to NumPy
+        orig_img = imgs[0].cpu().permute(1, 2, 0).numpy()
+        orig_img = np.clip(orig_img, 0, 1)
+
+        # A) GT subplot => row=2*i, spanning col=0..3
+        ax_gt = fig.add_subplot(gs[2*i, 0:4])
+        gt_fdm = fdms[0, 0].cpu().numpy()
+        ax_gt.imshow(orig_img)
+        ax_gt.imshow(gt_fdm, cmap='jet', alpha=0.4)
+        ax_gt.set_title(f"[{image_name}] Ground Truth", fontsize=title_fontsize)
+        ax_gt.axis("off")
+
+        # B) 4 model predictions => row=2*i+1, col=0..3
+        for j, mname in enumerate(model_names):
+            model = loaded_models[mname]
+            ep, best_nss, best_cc = best_info[mname]
+
+            # Inference
             with torch.no_grad():
                 pred_raw = model(imgs)
                 pred_map = safe_pred_map(pred_raw)
 
-            orig_img = imgs[0].cpu().permute(1, 2, 0).numpy()
-            orig_img = np.clip(orig_img, 0, 1)
-            gt_fdm = fdms[0, 0].cpu().numpy()
             pred_np = pred_map[0, 0].cpu().numpy()
             pred_vis = pred_np / (pred_np.max() + 1e-8)
 
-            fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-            fig.suptitle(f"Model: {model_name} | Image: {image_name}", fontsize=15)
-            axs[0].imshow(orig_img)
-            axs[0].imshow(gt_fdm, cmap='jet', alpha=0.4)
-            axs[0].set_title("Ground Truth Saliency")
-            axs[0].axis("off")
-            axs[1].imshow(orig_img)
-            axs[1].imshow(pred_vis, cmap='jet', alpha=0.4)
-            axs[1].set_title("Predicted Saliency")
-            axs[1].axis("off")
-            display(fig)
-            plt.close(fig)
+            ax_pred = fig.add_subplot(gs[2*i+1, j])
+            ax_pred.imshow(orig_img)
+            ax_pred.imshow(pred_vis, cmap='jet', alpha=0.4)
 
+            # Title includes epoch, NSS, CC
+            if ep is not None:
+                ax_pred.set_title(
+                    f"{mname}\n(Ep={ep}, NSS={best_nss:.3f}, CC={best_cc:.3f})",
+                    fontsize=title_fontsize
+                )
+            else:
+                ax_pred.set_title(f"{mname}\n(No log info)", fontsize=title_fontsize)
+            ax_pred.axis("off")
 
-def test_single_image(
-        image_path="example_input.jpg",
-        device="cuda"
-):
-    if not os.path.isfile(image_path):
-        raise FileNotFoundError(f"Image not found: {image_path}")
+    # Adjust subplot margins
+    # Keep no left/right margin, but allow top/bottom margin to avoid cutting off text
+    fig.subplots_adjust(left=0.0, right=1.0, top=0.95, bottom=0.05, hspace=0.2)
 
-    img = tvio.read_image(image_path, mode=ImageReadMode.RGB).float() / 255.0
-
-    _, H, W = img.shape
-    img_batch = img.unsqueeze(0).to(device)
-
-    fig, axs = plt.subplots(1, 4, figsize=(20, 5))
-    fig.suptitle(f"Single Image: {os.path.basename(image_path)} (No Ground Truth)", fontsize=16)
-
-    for idx, (model_name, ckpt_path) in enumerate(model_checkpoints.items()):
-        model = load_model(model_name, ckpt_path, device)
-        with torch.no_grad():
-            pred_raw = model(img_batch)
-            pred_map = safe_pred_map(pred_raw)
-
-        pred_np = pred_map[0, 0].cpu().numpy()
-        pred_vis = pred_np / (pred_np.max() + 1e-8)
-
-        orig_img_np = img.cpu().permute(1, 2, 0).numpy()
-        orig_img_np = np.clip(orig_img_np, 0, 1)
-
-        axs[idx].imshow(orig_img_np)
-        axs[idx].imshow(pred_vis, cmap='jet', alpha=0.4)
-        axs[idx].set_title(f"{model_name} Prediction")
-        axs[idx].axis("off")
-
-    display(fig)
-    plt.close(fig)
+    # Finally show the figure
+    plt.show()
 
 
 def main():
@@ -177,10 +229,8 @@ def main():
             num_images=args.num_images
         )
     else:
-        test_single_image(
-            image_path=args.single_image_path,
-            device=device
-        )
+        pass
 
 
-test_single_image("uia1.png", device="cuda")
+if __name__ == "__main__":
+    test_multiple_images_with_gt()
