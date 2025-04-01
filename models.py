@@ -8,8 +8,8 @@ from transformers import Dinov2Model
 
 class DinoV2Saliency(nn.Module):
     """
-    A saliency model that uses DINOv2-based ViT-B/14 as the backbone,
-    plus a lightweight conv head for upsampling to the original resolution.
+    DINOv2-based ViT-B/14 backbone,
+    conv head for upsampling to the original resolution.
     """
 
     def __init__(self):
@@ -31,14 +31,14 @@ class DinoV2Saliency(nn.Module):
         feats = out.last_hidden_state  # [B, N, hidden_dim]
         patch_tokens = feats[:, 1:, :]  # skip CLS
 
-        # Reshape patch tokens into a 2D feature map
+        # reshape patch tokens into a 2D feature map
         Hf = H // 14
         Wf = W // 14
         patch_tokens = patch_tokens.transpose(1, 2).reshape(B, -1, Hf, Wf)
 
-        # Run the conv head => low-res saliency
+        # conv head => low-res saliency
         sal_low = self.conv_head(patch_tokens)
-        # Upsample to original size
+        # upsample to original size
         sal_map = F.interpolate(sal_low, (H, W), mode='bilinear', align_corners=False)
         return sal_map
 
@@ -418,10 +418,10 @@ class HybridSwinViT(nn.Module):
 
 def build_saliency_model(model_name: str):
     """
-      "dino"       -> DinoV2Saliency
-      "convnext"   -> ConvNeXtViT
-      "purevit"    -> PureVisionTransformer
-      "swin" -> HybridSwinViT
+      "dino"       -> DinoV2
+      "convnext"   -> ConvNeXt
+      "purevit"    -> vit no bb
+      "swin" -> swin + vit
     """
     model_name = model_name.lower()
     if model_name == "dino":

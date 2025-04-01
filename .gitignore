@@ -37,6 +37,10 @@ venv.bak/
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints
 
+# large models
+
+./checkpoints
+
 # VSCode settings (optional)
 .vscode/
 
