@@ -1,1 +1,0 @@
-epoch,train_cost,train_cc,train_nss,train_kl,val_cost,val_cc,val_nss,val_kl,val_aucj,val_sauc,metric=(cc+nss-kl)
