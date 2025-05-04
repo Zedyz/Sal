@@ -20,8 +20,8 @@ ALPHA_FACE = 0.6
 ALPHA_TEXT = 0.4
 ALPHA_BANNER = -2.5
 
-train_json = "datasets/scanpaths_train.json"
-val_json = "datasets/scanpaths_test.json"
+train_json = "../datasets/scanpaths_train.json"
+val_json = "../datasets/scanpaths_test.json"
 
 TEST_JSON_PATH = "../dataset/scanpaths_test.json"
 ROOT_FOLDER = "."
